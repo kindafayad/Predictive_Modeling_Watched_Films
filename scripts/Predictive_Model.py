@@ -1,53 +1,31 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, precision_score, recall_score
+from collections import Counter
 
-# Load the updated datasets
-historical_data_df = pd.read_csv('Netflix Assignment Data - Updated-1.csv')
-predictions_data_df = pd.read_csv('YourPredictionW24.csv')
+# Load the datasets
+netflix_data_path = 'data/Netflix_Data.csv'
+your_prediction_path = 'data/YourPredictionW24.csv'
+netflix_data = pd.read_csv(netflix_data_path)
+your_prediction = pd.read_csv(your_prediction_path)
 
-# Preprocess genres in both historical and predictions data
-for df in [historical_data_df, predictions_data_df]:
-    df.fillna('', inplace=True)  # Fill NaNs with empty strings for concatenation
-    df['Combined_Genres'] = df[['Genre 1', 'Genre 2', 'Genre 3']].values.tolist()
-    df['Combined_Genres'] = df['Combined_Genres'].apply(lambda x: list(set([genre.strip() for genre in x if genre.strip()])))
+# Analyze Historical Viewing Data
+# Prepare the genres in the Netflix data for analysis
+netflix_data['Genres'] = netflix_data['Genres'].apply(lambda x: x.split(', ') if pd.notnull(x) else [])
+# Count the occurrences of each genre
+genre_counts = Counter([genre for sublist in netflix_data['Genres'].tolist() for genre in sublist])
+# Identify the top 5 most popular genres
+most_popular_genres = [genre for genre, count in genre_counts.most_common(5)]
 
-# Assuming 'Duration' in historical_data_df is in seconds, convert it to minutes
-historical_data_df['Duration_minutes'] = historical_data_df['Duration'] / 60
+# Define a function to check if any of a title's genres match the most popular genres
+def matches_popular_genres(genres, popular_genres):
+    title_genres = genres.split(', ')
+    return any(genre in popular_genres for genre in title_genres)
 
-# Aggregate and calculate average viewing duration by all combined genres
-average_duration_by_genre = historical_data_df.explode('Combined_Genres').groupby('Combined_Genres')['Duration_minutes'].mean().reset_index()
+# Apply the function to fill the "Watched40" column in the YourPrediction dataset
+your_prediction['Watched40'] = your_prediction['Genres'].apply(lambda x: matches_popular_genres(x, most_popular_genres)).astype(int)
 
-# Calculate the genre match score for predictions data
-unique_genres = average_duration_by_genre['Combined_Genres'].unique().tolist()
+# Display the updated YourPrediction dataset
+print(your_prediction)
 
-def calculate_genre_match_score(row):
-    show_genres = row['Combined_Genres']
-    match_score = sum(genre in unique_genres for genre in show_genres)
-    return match_score
-
-predictions_data_df['Genre_Match_Score'] = predictions_data_df.apply(calculate_genre_match_score, axis=1)
-
-# Prepare the dataset for modeling
-predictions_data_df.dropna(subset=['Watched40'], inplace=True)  # Ensure no NaN values in target variable
-
-X = predictions_data_df[['Genre_Match_Score']]  # Features
-y = predictions_data_df['Watched40'].astype('int')  # Target variable, ensuring it's integer
-
-# Splitting the dataset into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-# Train the Logistic Regression model
-model = LogisticRegression(max_iter=1000)  # Adjust max_iter to ensure convergence
-model.fit(X_train, y_train)
-
-# Make predictions on the test set
-predictions = model.predict(X_test)
-
-# Evaluate the model's performance
-accuracy = accuracy_score(y_test, predictions)
-precision = precision_score(y_test, predictions, zero_division=0)
-recall = recall_score(y_test, predictions, zero_division=0)
-
-print(f"Model Evaluation Results:\n- Accuracy: {accuracy}\n- Precision: {precision}\n- Recall: {recall}")
+# Optionally, save the updated dataset to a new CSV file
+output_path = 'YourPredictionW24.csv'
+your_prediction.to_csv(output_path, index=False)
